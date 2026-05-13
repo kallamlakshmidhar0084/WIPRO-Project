@@ -7,11 +7,13 @@ from typing_extensions import TypedDict
 class AgentState(TypedDict):
     raw_code: str
     language: str
+    target_framework: str
     summary: str
     identified_patterns: list[str]
     complexity_score: float
     risk_report: dict
     modern_code: str
+    changes_made: list[str]
     checklist: list[str]
     migration_report: str
     human_approved_analysis: bool

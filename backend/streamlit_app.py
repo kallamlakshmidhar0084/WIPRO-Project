@@ -1,6 +1,4 @@
 import os
-import time
-from typing import Any
 
 import requests
 import streamlit as st
@@ -9,8 +7,32 @@ import streamlit as st
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 
-st.set_page_config(page_title="Code Modernisation Agent", page_icon="</>", layout="centered")
+def init_state() -> None:
+    st.session_state.setdefault("thread_id", None)
+    st.session_state.setdefault("step", 1)
+    st.session_state.setdefault("analysis", None)
+    st.session_state.setdefault("modern_code", None)
+    st.session_state.setdefault("changes_made", [])
+    st.session_state.setdefault("migration_report", None)
 
+
+def post_api(path: str, payload: dict) -> dict:
+    response = requests.post(f"{API_BASE_URL}{path}", json=payload, timeout=120)
+    response.raise_for_status()
+    return response.json()
+
+
+def risk_delta_color(risk_level: str) -> str:
+    colors = {
+        "CRITICAL": "red",
+        "HIGH": "orange",
+        "MEDIUM": "yellow",
+        "LOW": "green",
+    }
+    return colors.get(risk_level, "gray")
+
+
+st.set_page_config(page_title="Code Modernisation Assistant", layout="centered")
 st.markdown(
     """
     <style>
@@ -32,145 +54,131 @@ st.markdown(
         color: #6b7280;
         opacity: 1;
     }
-    .small-muted {
-        color: #667085;
-        font-size: 0.85rem;
-    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-
-def init_state() -> None:
-    st.session_state.setdefault("messages", [])
-    st.session_state.setdefault("snippet_id", None)
-    st.session_state.setdefault("last_code", "")
-    st.session_state.setdefault("last_query", "")
-
-
-def request_api(method: str, path: str, **kwargs: Any) -> Any:
-    url = f"{API_BASE_URL}{path}"
-    response = requests.request(method, url, timeout=90, **kwargs)
-    response.raise_for_status()
-    return response.json()
-
-
-def stream_status(lines: list[str]) -> None:
-    placeholder = st.empty()
-    rendered = ""
-    for line in lines:
-        rendered += f"- {line}\n"
-        placeholder.markdown(rendered)
-        time.sleep(0.15)
-
-
-def add_message(role: str, content: str) -> None:
-    st.session_state.messages.append({"role": role, "content": content})
-
-
-def render_migration(data: dict[str, Any]) -> None:
-    st.markdown(data["summary"])
-    st.code(data["modernized_code"], language=data.get("language") or None)
-    st.markdown("### Checklist")
-    for item in data["checklist"]:
-        st.markdown(f"- **{item['status']}**: {item['item']} - {item['notes']}")
-    st.markdown("### Risks")
-    for risk in data["risks"]:
-        st.markdown(f"- **{risk['severity']}**: {risk['risk']} Mitigation: {risk['mitigation']}")
-
-
-def render_patterns(data: dict[str, Any]) -> None:
-    for pattern in data["patterns"]:
-        st.markdown(f"### {pattern['name']}")
-        st.markdown(pattern["description"])
-        if pattern.get("example"):
-            st.code(pattern["example"])
-        if pattern.get("modern_alternative"):
-            st.markdown(f"**Modern alternative:** {pattern['modern_alternative']}")
-
-
 init_state()
 
-st.title("AI Code Modernisation Agent")
-st.caption("Analyse legacy code, detect migration risks, and generate a structured modernisation draft.")
+st.title("Code Modernisation Assistant")
 
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+code = st.text_area("Paste your legacy code", height=300, key="code_input")
+language = st.selectbox("Language", ["VB6", "ClassicASP", "JavaEE", "COBOL"])
+target_framework = st.selectbox(
+    "Target framework",
+    ["Python/FastAPI", "C#/.NET 8", "Node.js/Express", "Java/Spring Boot"],
+)
 
-with st.container():
-    code = st.text_area(
-        "Code snippet",
-        value=st.session_state.last_code,
-        height=150,
-        placeholder="Paste legacy code here...",
-        label_visibility="collapsed",
-    )
-    query = st.text_input(
-        "Optional query",
-        value=st.session_state.last_query,
-        placeholder="Optional: focus the analysis on security, Java 17 migration, performance...",
-        label_visibility="collapsed",
-    )
+if st.button("Analyse Code"):
+    try:
+        with st.spinner("Analysing..."):
+            result = post_api(
+                "/analyse",
+                {
+                    "code": code,
+                    "language": language,
+                    "target_framework": target_framework,
+                },
+            )
+        st.session_state.analysis = result
+        st.session_state.thread_id = result["thread_id"]
+        st.session_state.step = 2
+    except requests.RequestException as e:
+        st.error(f"Analysis failed: {e}")
+    except KeyError as e:
+        st.error(f"Unexpected analysis response: missing {e}")
 
-    col1, col2, col3 = st.columns([1, 1, 1])
-    analyse_clicked = col1.button("Analyse", type="primary", use_container_width=True)
-    migrate_clicked = col2.button(
-        "Generate",
-        disabled=st.session_state.snippet_id is None,
-        use_container_width=True,
-    )
-    patterns_clicked = col3.button(
-        "Get Patterns",
-        disabled=st.session_state.snippet_id is None,
-        use_container_width=True,
-    )
-    st.markdown(
-        f'<p class="small-muted">Backend: {API_BASE_URL}</p>',
-        unsafe_allow_html=True,
-    )
+if st.session_state.step >= 2 and st.session_state.analysis:
+    analysis = st.session_state.analysis
+    risk_report = analysis.get("risk_report") or {}
+    risk_level = risk_report.get("risk_level", "UNKNOWN")
 
-if analyse_clicked:
-    if not code.strip():
-        st.error("Code snippet is required.")
-    else:
-        st.session_state.last_code = code
-        st.session_state.last_query = query
-        add_message("user", f"Please analyse this snippet.\n\n```text\n{code}\n```")
-        with st.chat_message("assistant"):
-            stream_status(["Validating input", "Sending to backend", "Agent analysing"])
+    with st.expander("Code Analysis", expanded=True):
+        st.write(analysis.get("summary", ""))
+        st.code(analysis.get("identified_patterns", []))
+        st.metric("Complexity Score", analysis.get("complexity_score", 0.0))
+
+    with st.expander("Risk Assessment", expanded=True):
+        st.metric(
+            "Risk Level",
+            risk_level,
+            delta=risk_delta_color(risk_level),
+            delta_color="off",
+        )
+        for factor in risk_report.get("risk_factors", []):
+            st.write(f"- {factor}")
+
+    with st.expander("Raw JSON"):
+        st.json(analysis)
+
+    approve_col, reject_col = st.columns(2)
+    with approve_col:
+        if st.button("Approve & Generate Modern Code", use_container_width=True):
             try:
-                data = request_api("POST", "/analyse", json={"code": code, "query": query or None})
-                st.session_state.snippet_id = data["snippet_id"]
-                st.markdown(data["analysis"])
-                add_message("assistant", data["analysis"])
-            except requests.HTTPError as exc:
-                st.error(f"Backend error: {exc.response.text}")
-            except requests.RequestException as exc:
-                st.error(f"Could not reach backend: {exc}")
-        st.rerun()
+                with st.spinner("Generating..."):
+                    result = post_api(
+                        "/generate",
+                        {
+                            "thread_id": st.session_state.thread_id,
+                            "approved": True,
+                        },
+                    )
+                st.session_state.modern_code = result.get("modern_code")
+                st.session_state.changes_made = result.get("changes_made") or []
+                st.session_state.step = 3
+            except requests.RequestException as e:
+                st.error(f"Generation failed: {e}")
 
-if migrate_clicked and st.session_state.snippet_id:
-    with st.chat_message("assistant"):
-        stream_status(["Validating snippet", "Sending to backend", "Agent generating"])
-        try:
-            data = request_api("POST", "/generate")
-            render_migration(data)
-            add_message("assistant", f"Generated modernised code for snippet `{data['snippet_id']}`.")
-        except requests.HTTPError as exc:
-            st.error(f"Backend error: {exc.response.text}")
-        except requests.RequestException as exc:
-            st.error(f"Could not reach backend: {exc}")
+    with reject_col:
+        if st.button("Reject", use_container_width=True):
+            try:
+                with st.spinner("Generating..."):
+                    post_api(
+                        "/generate",
+                        {
+                            "thread_id": st.session_state.thread_id,
+                            "approved": False,
+                        },
+                    )
+                st.session_state.thread_id = None
+                st.session_state.step = 1
+                st.session_state.analysis = None
+                st.session_state.modern_code = None
+                st.session_state.changes_made = []
+                st.session_state.migration_report = None
+                st.rerun()
+            except requests.RequestException as e:
+                st.error(f"Reject failed: {e}")
 
-if patterns_clicked:
-    with st.chat_message("assistant"):
-        stream_status(["Requesting anti-pattern catalogue", "Agent preparing patterns"])
+if st.session_state.step >= 3 and st.session_state.modern_code:
+    st.caption("Switch language tab if not Python")
+    st.code(st.session_state.modern_code, language="python")
+
+    if st.session_state.changes_made:
+        st.write("Changes made:")
+        for change in st.session_state.changes_made:
+            st.write(f"- {change}")
+
+    include_checklist = st.checkbox("Include migration checklist in report")
+    if st.button("Build Migration Report"):
         try:
-            data = request_api("GET", "/patterns")
-            render_patterns(data)
-            add_message("assistant", "Loaded anti-pattern catalogue.")
-        except requests.HTTPError as exc:
-            st.error(f"Backend error: {exc.response.text}")
-        except requests.RequestException as exc:
-            st.error(f"Could not reach backend: {exc}")
+            with st.spinner("Building report..."):
+                result = post_api(
+                    "/checklist",
+                    {
+                        "thread_id": st.session_state.thread_id,
+                        "request_checklist": include_checklist,
+                    },
+                )
+            report = result.get("migration_report", "")
+            st.session_state.migration_report = report
+            st.markdown(report)
+            st.download_button(
+                "Download migration_report.md",
+                data=report,
+                file_name="migration_report.md",
+                mime="text/markdown",
+            )
+        except requests.RequestException as e:
+            st.error(f"Report build failed: {e}")
