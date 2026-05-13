@@ -243,3 +243,36 @@ This project demonstrates the full skeleton of a production-style modernisation 
 - Downloadable migration report
 
 The current implementation is ready for model-backed refinement by improving prompts, expanding tools, adding persistence, and broadening test coverage around graph resumes and interrupt handling.
+
+
+## Future Vision if time permits
+
+### Observability & Evaluation
+- [ ] LangSmith tracing integration for every node run
+- [ ] Ragas-based evaluation pipeline to score modernisation quality
+- [ ] Token usage and latency dashboards per node
+- [ ] Structured logging with run IDs tied to thread IDs
+
+### Agent Intelligence
+- [ ] Multi-agent architecture — separate specialist agents for analysis, security audit, and generation
+- [ ] Reflection loop — agent self-reviews generated code before presenting to human
+- [ ] RAG pipeline over internal codebase to match organisation-specific patterns
+- [ ] Few-shot examples pulled dynamically from a vector store per language
+
+### Security & Compliance
+- [ ] OWASP vulnerability scanner node before code generation
+- [ ] PII/secrets detection pre-flight before code is sent to LLM
+- [ ] Audit trail — immutable log of every human approval decision with timestamp
+- [ ] Role-based approval — separate approver for analysis vs generated code
+
+### Scale & Deployment
+- [ ] Redis checkpointer replacing MemorySaver for production multi-instance deployments
+- [ ] Async task queue (Celery/ARQ) for long-running generation jobs
+- [ ] Webhook callbacks so CI/CD pipelines can trigger modernisation runs
+- [ ] Batch mode — process entire repositories, not just single snippets
+
+### Developer Experience
+- [ ] VS Code extension — right-click any file to trigger modernisation
+- [ ] GitHub Actions integration — PR comment triggers analysis on legacy files
+- [ ] Diff view with accept/reject per change block, not just full code approval
+- [ ] Export to Jira — auto-create migration tickets from checklist items

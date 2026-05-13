@@ -2,6 +2,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from agent_graph import compiled
@@ -33,13 +34,21 @@ class ChecklistRequest(BaseModel):
     request_checklist: bool
 
 
+def _interrupted_value(snapshot, key: str):
+    for interrupt in getattr(snapshot, "interrupts", ()) or ():
+        value = getattr(interrupt, "value", None)
+        if isinstance(value, dict) and key in value:
+            return value[key]
+    return None
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "nodes": list(compiled.graph.nodes.keys())}
 
 
 @app.post("/analyse")
-def analyse(request: AnalyseRequest) -> dict:
+async def analyse(request: AnalyseRequest) -> dict:
     thread_id = str(uuid4())
     thread_config = {"configurable": {"thread_id": thread_id}}
     initial_state = {
@@ -52,42 +61,51 @@ def analyse(request: AnalyseRequest) -> dict:
         "requested_checklist": False,
     }
 
-    compiled.invoke(initial_state, thread_config)
+    await compiled.ainvoke(initial_state, thread_config)
     snapshot = compiled.get_state(thread_config)
     values = snapshot.values
+    risk_report = values.get("risk_report") or _interrupted_value(snapshot, "risk_report")
     return {
         "thread_id": thread_id,
         "summary": values.get("summary"),
         "identified_patterns": values.get("identified_patterns"),
         "complexity_score": values.get("complexity_score"),
         "language": values.get("language"),
-        "risk_report": values.get("risk_report"),
+        "risk_report": risk_report,
+        "error": values.get("error"),
     }
 
 
 @app.post("/generate")
-def generate(request: GenerateRequest) -> dict:
+async def generate(request: GenerateRequest) -> dict:
     if not request.approved:
         return {"status": "rejected"}
 
     thread_config = {"configurable": {"thread_id": request.thread_id}}
-    compiled.invoke({"human_approved_analysis": True}, thread_config)
+    await compiled.ainvoke(
+        Command(update={"human_approved_analysis": True}, resume=True),
+        thread_config,
+    )
     snapshot = compiled.get_state(thread_config)
     values = snapshot.values
+    generated = _interrupted_value(snapshot, "generated_code") or {}
     return {
-        "modern_code": values.get("modern_code"),
-        "changes_made": values.get("changes_made"),
+        "modern_code": values.get("modern_code") or generated.get("modern_code"),
+        "changes_made": values.get("changes_made") or generated.get("changes_made"),
     }
 
 
 @app.post("/checklist")
-def checklist(request: ChecklistRequest) -> dict:
+async def checklist(request: ChecklistRequest) -> dict:
     thread_config = {"configurable": {"thread_id": request.thread_id}}
-    compiled.invoke(
-        {
-            "human_approved_code": True,
-            "requested_checklist": request.request_checklist,
-        },
+    await compiled.ainvoke(
+        Command(
+            update={
+                "human_approved_code": True,
+                "requested_checklist": request.request_checklist,
+            },
+            resume=True,
+        ),
         thread_config,
     )
     snapshot = compiled.get_state(thread_config)

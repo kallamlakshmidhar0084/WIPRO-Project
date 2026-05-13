@@ -60,6 +60,23 @@ PY
   return 1
 }
 
+is_graph_backend() {
+  local port="$1"
+  python3 - "$port" <<'PY' >/dev/null 2>&1
+import json
+import sys
+import urllib.request
+
+port = int(sys.argv[1])
+with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=1) as response:
+    payload = json.load(response)
+
+nodes = payload.get("nodes", [])
+required = {"analyser", "risk_assessor", "code_generator", "checklist_builder", "report_builder"}
+sys.exit(0 if required.issubset(set(nodes)) else 1)
+PY
+}
+
 if [ -f "$PROJECT_ROOT/backend/.env" ]; then
   log "Loading backend/.env..."
   set -a
@@ -82,7 +99,11 @@ log "Installing dependencies..."
 pip install -r requirements.txt || fail "Dependency installation failed."
 
 if is_listening "$BACKEND_PORT"; then
-  log "FastAPI port $BACKEND_PORT is already listening. Reusing existing backend."
+  if is_graph_backend "$BACKEND_PORT"; then
+    log "FastAPI port $BACKEND_PORT is already running the graph backend. Reusing it."
+  else
+    fail "Port $BACKEND_PORT is already in use by a different backend. Stop it, then rerun ./startup.sh."
+  fi
 else
   log "Starting FastAPI backend on http://127.0.0.1:$BACKEND_PORT"
   uvicorn agent:app --reload --host 127.0.0.1 --port "$BACKEND_PORT" > "$LOG_DIR/backend.log" 2>&1 &
