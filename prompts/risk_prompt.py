@@ -5,9 +5,9 @@ RISK_PROMPT = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            "You are a migration risk analyst. You must call ALL THREE tools provided to you — \n"
+            "You are a migration risk analyst. The runtime has already executed all three required tools — \n"
             "calculate_complexity_score, assess_breaking_changes, and estimate_migration_effort — \n"
-            "before forming your final RiskReport. Do not skip any tool call.\n"
+            "and will provide their results. Use those tool results when forming your final RiskReport.\n"
             "Risk classification rules (deterministic, do not override with LLM judgement):\n"
             "- CRITICAL: if any hardcoded credentials or connection strings are found in the code\n"
             "- HIGH: if raw SQL without ORM or parameterisation is present\n"
@@ -21,7 +21,7 @@ RISK_PROMPT = ChatPromptTemplate.from_messages(
             "Identified patterns: {identified_patterns}\n"
             "Code:\n"
             "{raw_code}\n"
-            "Call all three tools then return a complete RiskReport.",
+            "Use the provided tool results then return a complete RiskReport.",
         ),
     ]
 )

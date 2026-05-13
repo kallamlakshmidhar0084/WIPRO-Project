@@ -86,7 +86,10 @@ T = TypeVar("T", bound=BaseModel)
 
 
 def _build_kwargs(
-    messages: list[dict], temperature: float, tags: Optional[list[str]]
+    messages: list[dict],
+    temperature: float,
+    tags: Optional[list[str]],
+    extra_kwargs: Optional[dict[str, Any]] = None,
 ) -> dict:
     """Pick model + auth based on LOCAL_MODEL env."""
     kwargs: dict = {
@@ -102,6 +105,8 @@ def _build_kwargs(
     else:
         kwargs["model"] = DEFAULT_REMOTE_MODEL
         kwargs["api_key"] = REMOTE_API_KEY
+    if extra_kwargs:
+        kwargs.update(extra_kwargs)
     return kwargs
 
 
@@ -194,10 +199,11 @@ def _chat_traced(
     response_model: Optional[Type[T]],
     temperature: float,
     tags: Optional[list[str]],
+    extra_kwargs: Optional[dict[str, Any]],
 ) -> Union[str, T]:
     """Inner traced body — see ``chat`` for the public contract."""
     if response_model is None:
-        kwargs = _build_kwargs(messages, temperature, tags)
+        kwargs = _build_kwargs(messages, temperature, tags, extra_kwargs)
         response = completion(**kwargs)
         return _content(response)
 
@@ -206,7 +212,7 @@ def _chat_traced(
 
     last_error: Optional[Exception] = None
     for _ in range(2):  # initial + 1 retry
-        kwargs = _build_kwargs(augmented, temperature, tags)
+        kwargs = _build_kwargs(augmented, temperature, tags, extra_kwargs)
         response = completion(**kwargs)
         raw = _strip_fences(_content(response))
         try:
@@ -228,6 +234,7 @@ def chat(
     temperature: float = 0.4,
     tags: Optional[list[str]] = None,
     config: Optional[dict] = None,
+    extra_kwargs: Optional[dict[str, Any]] = None,
 ) -> Union[str, T]:
     """Sync LLM call.
 
@@ -241,6 +248,7 @@ def chat(
             response_model=response_model,
             temperature=temperature,
             tags=tags,
+            extra_kwargs=extra_kwargs,
         )
 
 
@@ -256,10 +264,11 @@ async def _achat_traced(
     response_model: Optional[Type[T]],
     temperature: float,
     tags: Optional[list[str]],
+    extra_kwargs: Optional[dict[str, Any]],
 ) -> Union[str, T]:
     """Inner traced body — see ``achat`` for the public contract."""
     if response_model is None:
-        kwargs = _build_kwargs(messages, temperature, tags)
+        kwargs = _build_kwargs(messages, temperature, tags, extra_kwargs)
         response = await acompletion(**kwargs)
         return _content(response)
 
@@ -268,7 +277,7 @@ async def _achat_traced(
 
     last_error: Optional[Exception] = None
     for _ in range(2):
-        kwargs = _build_kwargs(augmented, temperature, tags)
+        kwargs = _build_kwargs(augmented, temperature, tags, extra_kwargs)
         response = await acompletion(**kwargs)
         raw = _strip_fences(_content(response))
         try:
@@ -290,6 +299,7 @@ async def achat(
     temperature: float = 0.4,
     tags: Optional[list[str]] = None,
     config: Optional[dict] = None,
+    extra_kwargs: Optional[dict[str, Any]] = None,
 ) -> Union[str, T]:
     """Async LLM call. Mirrors ``chat`` exactly but uses ``litellm.acompletion``.
 
@@ -304,6 +314,7 @@ async def achat(
             response_model=response_model,
             temperature=temperature,
             tags=tags,
+            extra_kwargs=extra_kwargs,
         )
 
 

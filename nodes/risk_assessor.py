@@ -1,16 +1,12 @@
-import os
-
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
+from langchain_core.runnables import RunnableConfig
 from langgraph.types import interrupt
 
+from backend.llm_client import achat
+from nodes.prompt_utils import to_litellm_messages
 from prompts.risk_prompt import RISK_PROMPT
 from schemas.output_schemas import RiskReport
 from state import AgentState
 from tools.risk_tools import assess_breaking_changes, calculate_complexity_score, estimate_migration_effort
-
-
-load_dotenv("backend/.env")
 
 
 def _risk_level(code: str, patterns: list[str]) -> str:
@@ -24,7 +20,7 @@ def _risk_level(code: str, patterns: list[str]) -> str:
     return "LOW"
 
 
-def _fallback_risk(state: AgentState) -> dict:
+def _tool_results(state: AgentState) -> dict:
     code = state["raw_code"]
     patterns = state.get("identified_patterns", [])
     risk_level = _risk_level(code, patterns)
@@ -43,39 +39,37 @@ def _fallback_risk(state: AgentState) -> dict:
     return {
         "risk_level": risk_level,
         "risk_factors": risk_factors,
+        "complexity_score": complexity_score,
+        "breaking_changes": breaking_changes,
         "estimated_effort_days": effort_days,
         "breaking_change_likelihood": min(round(breaking_changes["risk_count"] / 10, 2), 1.0),
     }
 
 
-async def assess_risk(state: AgentState) -> dict:
+async def assess_risk(state: AgentState, config: RunnableConfig | None = None) -> dict:
     """Assess migration risk and pause for human review before graph continuation."""
-    if not os.getenv("OPENAI_API_KEY"):
-        risk_report = _fallback_risk(state)
-        interrupt(
-            {
-                "message": "Review analysis and risk report. Set human_approved_analysis=True to continue.",
-                "risk_report": risk_report,
-            }
-        )
-        return {"risk_report": risk_report}
-
     try:
-        tools = [
-            calculate_complexity_score,
-            assess_breaking_changes,
-            estimate_migration_effort,
-        ]
-        llm = ChatOpenAI(model="gpt-4o", temperature=0)
-        llm_with_tools = llm.bind_tools(tools)
-        structured_llm = llm_with_tools.with_structured_output(RiskReport)
-        chain = RISK_PROMPT | structured_llm
-        result = await chain.ainvoke(
+        tool_results = _tool_results(state)
+        messages = to_litellm_messages(
+            RISK_PROMPT,
             {
                 "raw_code": state["raw_code"],
                 "language": state.get("language", "unknown"),
                 "identified_patterns": state.get("identified_patterns", []),
+            },
+        )
+        messages.append(
+            {
+                "role": "user",
+                "content": f"Tool results from all three required tools:\n{tool_results}",
             }
+        )
+        result = await achat(
+            messages,
+            response_model=RiskReport,
+            temperature=0,
+            tags=["risk_assessor"],
+            config=config,
         )
         risk_report = result.model_dump()
     except Exception as e:
