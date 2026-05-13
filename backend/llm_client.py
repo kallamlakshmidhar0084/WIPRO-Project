@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Any, Optional, Type, TypeVar, Union
 
 from dotenv import load_dotenv
@@ -38,17 +39,19 @@ from langsmith import traceable
 from langsmith.run_helpers import tracing_context
 from langsmith.run_trees import RunTree
 
-load_dotenv()
+ENV_PATH = Path(__file__).resolve().parent / ".env"
+load_dotenv(ENV_PATH)
 
 logger = logging.getLogger(__name__)
 
 LOCAL_MODEL = os.getenv("LOCAL_MODEL", "False").lower() == "true"
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY")
+REMOTE_API_KEY = ANTHROPIC_API_KEY or CLAUDE_API_KEY
 
-# litellm's Anthropic provider reads ANTHROPIC_API_KEY from env. Mirror our
-# CLAUDE_API_KEY into it so users only need to set one variable.
-if CLAUDE_API_KEY and not os.getenv("ANTHROPIC_API_KEY"):
-    os.environ["ANTHROPIC_API_KEY"] = CLAUDE_API_KEY
+# litellm's Anthropic provider reads ANTHROPIC_API_KEY from env.
+if REMOTE_API_KEY:
+    os.environ["ANTHROPIC_API_KEY"] = REMOTE_API_KEY
 
 # Single model for all nodes in v1 (decision 1.2). Production note: cheaper
 # nodes (plan / critique) could be routed to a smaller/local model.
@@ -61,16 +64,16 @@ _LANGSMITH_TRACING = os.getenv("LANGSMITH_TRACING", "").lower() == "true"
 # Startup confirmation — visible in app logs at import time.
 if LOCAL_MODEL:
     logger.info("llm_client configured: model=%s (local)", DEFAULT_LOCAL_MODEL)
-elif CLAUDE_API_KEY:
+elif REMOTE_API_KEY:
     logger.info(
-        "llm_client configured: model=%s, CLAUDE_API_KEY=set (len=%d), langsmith=%s",
+        "llm_client configured: model=%s, ANTHROPIC_API_KEY=set (len=%d), langsmith=%s",
         DEFAULT_REMOTE_MODEL,
-        len(CLAUDE_API_KEY),
+        len(REMOTE_API_KEY),
         "on" if _LANGSMITH_TRACING else "off",
     )
 else:
     logger.warning(
-        "llm_client: CLAUDE_API_KEY is NOT set — remote calls to %s will fail",
+        "llm_client: ANTHROPIC_API_KEY is NOT set — remote calls to %s will fail",
         DEFAULT_REMOTE_MODEL,
     )
 
@@ -98,7 +101,7 @@ def _build_kwargs(
         kwargs["api_base"] = LOCAL_API_BASE
     else:
         kwargs["model"] = DEFAULT_REMOTE_MODEL
-        kwargs["api_key"] = CLAUDE_API_KEY
+        kwargs["api_key"] = REMOTE_API_KEY
     return kwargs
 
 
@@ -312,12 +315,28 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
     model = DEFAULT_LOCAL_MODEL if LOCAL_MODEL else DEFAULT_REMOTE_MODEL
+    provider = "ollama" if LOCAL_MODEL else "anthropic"
     print(f"[smoke] LOCAL_MODEL={LOCAL_MODEL} model={model}")
+    print(f"[smoke] provider={provider}")
+    print(f"[smoke] ANTHROPIC_API_KEY={'set' if ANTHROPIC_API_KEY else 'MISSING'}")
     print(f"[smoke] CLAUDE_API_KEY={'set' if CLAUDE_API_KEY else 'MISSING'}")
 
+    if not LOCAL_MODEL and not REMOTE_API_KEY:
+        raise SystemExit(
+            "[smoke] Missing Anthropic credentials. Add ANTHROPIC_API_KEY=sk-ant-... "
+            "to backend/.env, or set LOCAL_MODEL=true and run Ollama locally."
+        )
+
+    print("[smoke] Sending real LLM request...")
     text = chat(
-        [{"role": "user", "content": "Reply with the single word: ready"}],
+        [
+            {
+                "role": "user",
+                "content": "Reply with exactly this sentence:LLM response: LLM smoke test passed.",
+            }
+        ],
         temperature=0.0,
     )
-    print(f"[smoke] response: {text.strip()!r}")
-    print("[smoke] OK — litellm + Anthropic configuration is working")
+    print("[smoke] LLM response:")
+    print(text.strip())
+    print("[smoke] OK — real LLM call completed")
