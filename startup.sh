@@ -85,7 +85,7 @@ if is_listening "$BACKEND_PORT"; then
   log "FastAPI port $BACKEND_PORT is already listening. Reusing existing backend."
 else
   log "Starting FastAPI backend on http://127.0.0.1:$BACKEND_PORT"
-  uvicorn backend.main:app --reload --host 127.0.0.1 --port "$BACKEND_PORT" > "$LOG_DIR/backend.log" 2>&1 &
+  uvicorn agent:app --reload --host 127.0.0.1 --port "$BACKEND_PORT" > "$LOG_DIR/backend.log" 2>&1 &
   BACKEND_PID=$!
 fi
 
