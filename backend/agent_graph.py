@@ -1,7 +1,7 @@
-from __future__ import annotations
-
 import re
 from typing import Any, Literal, TypedDict
+
+from langchain_core.runnables import RunnableConfig
 
 
 class AgentState(TypedDict, total=False):
@@ -40,7 +40,7 @@ def _detect_antipatterns(code: str) -> list[str]:
     return found or ["No high-confidence anti-patterns detected by the placeholder rules."]
 
 
-def _analyse_node(state: AgentState) -> AgentState:
+def _analyse_node(state: AgentState, config: RunnableConfig | None = None) -> AgentState:
     code = state["code"]
     query = state.get("query")
     language = _detect_language(code)
@@ -65,7 +65,7 @@ def _analyse_node(state: AgentState) -> AgentState:
     return state
 
 
-def _migrate_node(state: AgentState) -> AgentState:
+def _migrate_node(state: AgentState, config: RunnableConfig | None = None) -> AgentState:
     code = state["code"]
     language = _detect_language(code)
     modernized_code = (
@@ -74,7 +74,7 @@ def _migrate_node(state: AgentState) -> AgentState:
         f"{code.strip()}\n"
     )
     state["migration"] = {
-        "snippet_id": state["snippet_id"],
+        "snippet_id": state.get("snippet_id", "conversation-latest"),
         "modernized_code": modernized_code,
         "language": language,
         "summary": "Generated a behaviour-preserving modernisation draft using the integration workflow.",
@@ -106,7 +106,7 @@ def _migrate_node(state: AgentState) -> AgentState:
     return state
 
 
-def _patterns_node(state: AgentState) -> AgentState:
+def _patterns_node(state: AgentState, config: RunnableConfig | None = None) -> AgentState:
     state["patterns"] = {
         "patterns": [
             {
@@ -132,14 +132,14 @@ def _patterns_node(state: AgentState) -> AgentState:
     return state
 
 
-def _fallback_invoke(state: AgentState) -> AgentState:
+def _fallback_invoke(state: AgentState, config: RunnableConfig | None = None) -> AgentState:
     action = state["action"]
     if action == "analyse":
-        return _analyse_node(state)
+        return _analyse_node(state, config)
     if action == "migrate":
-        return _migrate_node(state)
+        return _migrate_node(state, config)
     if action == "patterns":
-        return _patterns_node(state)
+        return _patterns_node(state, config)
     raise ValueError(f"Unsupported graph action: {action}")
 
 
@@ -171,7 +171,7 @@ def _build_graph():
 _GRAPH = _build_graph()
 
 
-def invoke_graph(state: AgentState) -> AgentState:
+def invoke_graph(state: AgentState, config: RunnableConfig | None = None) -> AgentState:
     if _GRAPH is None:
-        return _fallback_invoke(state)
-    return _GRAPH.invoke(state)
+        return _fallback_invoke(state, config)
+    return _GRAPH.invoke(state, config=config)

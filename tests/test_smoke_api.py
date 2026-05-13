@@ -21,11 +21,11 @@ def test_analyse_empty_code_returns_validation_error() -> None:
     assert response.status_code == 422
 
 
-def test_migrate_after_analysis_returns_structured_output() -> None:
+def test_generate_after_analysis_returns_structured_output() -> None:
     analyse_response = client.post("/analyse", json={"code": "print('legacy')"})
     snippet_id = analyse_response.json()["snippet_id"]
 
-    response = client.post(f"/migrate/{snippet_id}")
+    response = client.post("/generate")
 
     assert response.status_code == 200
     data = response.json()
@@ -33,6 +33,15 @@ def test_migrate_after_analysis_returns_structured_output() -> None:
     assert data["modernized_code"]
     assert data["checklist"]
     assert data["risks"]
+
+
+def test_migrate_path_remains_backward_compatible() -> None:
+    analyse_response = client.post("/analyse", json={"code": "print('legacy')"})
+    snippet_id = analyse_response.json()["snippet_id"]
+
+    response = client.post(f"/migrate/{snippet_id}")
+
+    assert response.status_code == 200
 
 
 def test_migrate_unknown_snippet_returns_not_found() -> None:

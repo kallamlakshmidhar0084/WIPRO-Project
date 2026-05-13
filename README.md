@@ -104,8 +104,9 @@ pytest -q
 ## API
 
 - `POST /analyse`
-- `POST /migrate/{snippet_id}`
+- `POST /generate`
+- `POST /migrate/{snippet_id}` for backward compatibility
 - `GET /patterns`
 - `GET /health`
 
-`backend/agent.py` wraps `backend/agent_graph.py` and logs graph invocation for each endpoint flow.
+`backend/agent.py` wraps `backend/agent_graph.py`, passes a LangSmith-aware runnable config into `graph.invoke`, and logs graph invocation for each endpoint flow. Child LLM calls should receive the same LangGraph `config` so traces nest under the active graph/node run.

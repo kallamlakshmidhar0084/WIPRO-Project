@@ -13,17 +13,25 @@ class StoredSnippet:
 class SnippetStore:
     def __init__(self) -> None:
         self._snippets: dict[str, StoredSnippet] = {}
+        self._latest_snippet_id: str | None = None
         self._lock = Lock()
 
     def create(self, code: str, query: str | None = None) -> StoredSnippet:
         snippet = StoredSnippet(snippet_id=str(uuid4()), code=code, query=query)
         with self._lock:
             self._snippets[snippet.snippet_id] = snippet
+            self._latest_snippet_id = snippet.snippet_id
         return snippet
 
     def get(self, snippet_id: str) -> StoredSnippet | None:
         with self._lock:
             return self._snippets.get(snippet_id)
+
+    def latest(self) -> StoredSnippet | None:
+        with self._lock:
+            if self._latest_snippet_id is None:
+                return None
+            return self._snippets.get(self._latest_snippet_id)
 
 
 snippet_store = SnippetStore()

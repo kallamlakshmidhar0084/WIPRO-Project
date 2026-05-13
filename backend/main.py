@@ -64,6 +64,21 @@ def migrate(snippet_id: str) -> MigrationResponse:
     return response
 
 
+@app.post("/generate", response_model=MigrationResponse)
+def generate() -> MigrationResponse:
+    logger.info("query received | endpoint=/generate")
+    snippet = snippet_store.latest()
+    if snippet is None:
+        logger.warning("validation failed | endpoint=/generate | reason=no_active_snippet")
+        raise HTTPException(status_code=404, detail="no analysed snippet found in conversation memory")
+
+    logger.info("input validation done | endpoint=/generate | snippet_id=%s", snippet.snippet_id)
+    migration = migrate_code(snippet_id=snippet.snippet_id, code=snippet.code)
+    response = MigrationResponse(**migration)
+    logger.info("response sent back to frontend | endpoint=/generate | snippet_id=%s", snippet.snippet_id)
+    return response
+
+
 @app.get("/patterns", response_model=PatternsResponse)
 def patterns() -> PatternsResponse:
     logger.info("query received | endpoint=/patterns")

@@ -155,7 +155,7 @@ if migrate_clicked and st.session_state.snippet_id:
     with st.chat_message("assistant"):
         stream_status(["Validating snippet", "Sending to backend", "Agent generating"])
         try:
-            data = request_api("POST", f"/migrate/{st.session_state.snippet_id}")
+            data = request_api("POST", "/generate")
             render_migration(data)
             add_message("assistant", f"Generated modernised code for snippet `{data['snippet_id']}`.")
         except requests.HTTPError as exc:
